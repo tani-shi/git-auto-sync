@@ -22,6 +22,7 @@ def setup_logging(level: str = "INFO") -> None:
         logger.addHandler(file_handler)
 
         stderr_handler = logging.StreamHandler()
+        stderr_handler.setLevel(logging.WARNING)
         stderr_handler.setFormatter(
             logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
         )
