@@ -5,7 +5,7 @@ A CLI tool that keeps local git repositories up-to-date automatically in the bac
 ## Features
 
 - **Centralized management** — one tool, one scheduler for all your repos
-- **Safe by default** — only fast-forward merges; diverged or dirty branches are skipped
+- **Safe by default** — only fast-forward merges; diverged branches are skipped, dirty worktrees are merged when conflict-free
 - **Background daemon** — launchd integration on macOS for automatic syncing
 - **git maintenance** — enables prefetch, commit-graph, loose-objects, incremental-repack
 
@@ -55,7 +55,7 @@ For each registered repository:
 
 1. **Fetch** all remotes (`git fetch --all`)
 2. For each local tracking branch:
-   - If it's the **current branch** and the worktree is clean: `git merge --ff-only`
+   - If it's the **current branch**: `git merge --ff-only` (works even with uncommitted changes if no conflicts)
    - If it's a **non-current branch**: `git update-ref` to advance the ref
    - If the branch has **diverged**: skip and log
 3. Enable **git maintenance** tasks for optimized repo performance

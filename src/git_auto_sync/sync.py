@@ -61,18 +61,16 @@ def sync_repo(repo_path: Path) -> SyncResult:
             continue
 
         if branch.name == current_branch:
-            if not git.is_worktree_clean(repo_path):
-                result.branches.append(
-                    BranchResult(branch.name, "skipped", "working tree is dirty")
-                )
-                continue
             if git.merge_ff_only(repo_path, tracking.upstream):
                 result.branches.append(
                     BranchResult(branch.name, "updated", "fast-forward merge")
                 )
             else:
+                detail = "ff-only merge failed"
+                if not git.is_worktree_clean(repo_path):
+                    detail = "ff-only merge failed (dirty worktree conflict)"
                 result.branches.append(
-                    BranchResult(branch.name, "error", "ff-only merge failed")
+                    BranchResult(branch.name, "error", detail)
                 )
         else:
             if git.update_ref(repo_path, branch.name, tracking.upstream_sha):

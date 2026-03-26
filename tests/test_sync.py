@@ -23,15 +23,29 @@ def test_sync_fast_forward(local_clone: Path, bare_remote: Path):
     assert branch_results.get("main") == "updated"
 
 
-def test_sync_dirty_worktree_skips(local_clone: Path, bare_remote: Path):
+def test_sync_dirty_worktree_no_conflict_updates(local_clone: Path, bare_remote: Path):
     make_remote_commit(bare_remote, local_clone)
 
-    # Make worktree dirty
+    # Make worktree dirty with a file that doesn't conflict
     (local_clone / "dirty.txt").write_text("dirty")
 
     result = sync_repo(local_clone)
     branch_results = {b.name: b.status for b in result.branches}
-    assert branch_results.get("main") == "skipped"
+    assert branch_results.get("main") == "updated"
+
+
+def test_sync_dirty_worktree_with_conflict(local_clone: Path, bare_remote: Path):
+    # Remote modifies file.txt
+    make_remote_commit(bare_remote, local_clone, filename="file.txt")
+
+    # Local has uncommitted changes to the same file
+    (local_clone / "file.txt").write_text("local dirty changes")
+
+    result = sync_repo(local_clone)
+    branch_results = {b.name: b.status for b in result.branches}
+    assert branch_results.get("main") == "error"
+    main_result = [b for b in result.branches if b.name == "main"][0]
+    assert "dirty worktree" in main_result.detail
 
 
 def test_sync_diverged_branch(local_clone: Path, bare_remote: Path):
