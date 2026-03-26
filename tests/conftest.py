@@ -22,6 +22,7 @@ def bare_remote(tmp_path: Path) -> Path:
     remote = tmp_path / "remote.git"
     remote.mkdir()
     _run_git(remote, "init", "--bare")
+    _run_git(remote, "symbolic-ref", "HEAD", "refs/heads/main")
     return remote
 
 
