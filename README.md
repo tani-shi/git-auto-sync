@@ -41,6 +41,10 @@ git-auto-sync sync ~/projects/my-repo  # sync a specific repo
 git-auto-sync status            # last sync results
 git-auto-sync logs              # recent log entries
 
+# Configure sync interval
+git-auto-sync interval          # show current interval
+git-auto-sync interval 5        # set to 5 minutes
+
 # Background scheduling (macOS)
 git-auto-sync install           # install launchd scheduler
 git-auto-sync uninstall         # remove scheduler

@@ -149,6 +149,26 @@ def logs(lines: int) -> None:
 
 
 @main.command()
+@click.argument("minutes", required=False, type=click.IntRange(min=1))
+def interval(minutes: int | None) -> None:
+    """Get or set the sync interval in minutes."""
+    config = load_config()
+
+    if minutes is None:
+        click.echo(f"{config.interval_minutes}")
+        return
+
+    config.interval_minutes = minutes
+    save_config(config)
+    click.echo(f"Interval set to {minutes} minutes.")
+
+    if scheduler_is_installed():
+        scheduler_uninstall()
+        scheduler_install(interval_minutes=minutes)
+        click.echo("Scheduler reinstalled with new interval.")
+
+
+@main.command()
 def install() -> None:
     """Install background scheduler (launchd on macOS)."""
     if scheduler_is_installed():

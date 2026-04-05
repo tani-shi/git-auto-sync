@@ -82,3 +82,53 @@ def test_logs_no_file(tmp_path: Path):
         result = runner.invoke(main, ["logs"])
         assert result.exit_code == 0
         assert "No logs found" in result.output
+
+
+def test_interval_get(tmp_path: Path):
+    config_file = tmp_path / "cfg" / "config.toml"
+
+    with patch("git_auto_sync.config.CONFIG_FILE", config_file):
+        runner = CliRunner()
+        result = runner.invoke(main, ["interval"])
+        assert result.exit_code == 0
+        assert "10" in result.output
+
+
+def test_interval_set(tmp_path: Path):
+    config_dir = tmp_path / "cfg"
+    config_file = config_dir / "config.toml"
+
+    with (
+        patch("git_auto_sync.config.CONFIG_FILE", config_file),
+        patch("git_auto_sync.config.CONFIG_DIR", config_dir),
+        patch("git_auto_sync.cli.scheduler_is_installed", return_value=False),
+    ):
+        runner = CliRunner()
+        result = runner.invoke(main, ["interval", "5"])
+        assert result.exit_code == 0
+        assert "Interval set to 5 minutes" in result.output
+
+
+def test_interval_set_reinstalls_scheduler(tmp_path: Path):
+    config_dir = tmp_path / "cfg"
+    config_file = config_dir / "config.toml"
+
+    with (
+        patch("git_auto_sync.config.CONFIG_FILE", config_file),
+        patch("git_auto_sync.config.CONFIG_DIR", config_dir),
+        patch("git_auto_sync.cli.scheduler_is_installed", return_value=True),
+        patch("git_auto_sync.cli.scheduler_uninstall") as mock_uninstall,
+        patch("git_auto_sync.cli.scheduler_install") as mock_install,
+    ):
+        runner = CliRunner()
+        result = runner.invoke(main, ["interval", "15"])
+        assert result.exit_code == 0
+        assert "Scheduler reinstalled" in result.output
+        mock_uninstall.assert_called_once()
+        mock_install.assert_called_once_with(interval_minutes=15)
+
+
+def test_interval_rejects_zero():
+    runner = CliRunner()
+    result = runner.invoke(main, ["interval", "0"])
+    assert result.exit_code != 0
