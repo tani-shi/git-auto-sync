@@ -6,6 +6,7 @@ from unittest.mock import patch
 from click.testing import CliRunner
 
 from git_auto_sync.cli import main
+from git_auto_sync.config import Config, SyncMode
 
 
 def test_version():
@@ -132,3 +133,57 @@ def test_interval_rejects_zero():
     runner = CliRunner()
     result = runner.invoke(main, ["interval", "0"])
     assert result.exit_code != 0
+
+
+def test_mode_get(tmp_path: Path):
+    config_file = tmp_path / "config.toml"
+
+    with patch("git_auto_sync.config.CONFIG_FILE", config_file):
+        runner = CliRunner()
+        result = runner.invoke(main, ["mode"])
+
+    assert result.exit_code == 0
+    assert result.output == "sync\n"
+
+
+def test_mode_set(tmp_path: Path):
+    config_dir = tmp_path / "cfg"
+    config_file = config_dir / "config.toml"
+
+    with (
+        patch("git_auto_sync.config.CONFIG_FILE", config_file),
+        patch("git_auto_sync.config.CONFIG_DIR", config_dir),
+    ):
+        runner = CliRunner()
+        result = runner.invoke(main, ["mode", "fetch-only"])
+
+        assert result.exit_code == 0
+        assert result.output == "Mode set to fetch-only.\n"
+        from git_auto_sync.config import load_config
+
+        assert load_config().mode == SyncMode.FETCH_ONLY
+
+
+def test_sync_uses_configured_mode(local_clone: Path, tmp_path: Path):
+    lock_dir = tmp_path / "lock"
+    lock_dir.mkdir()
+    lock_file = lock_dir / "sync.lock"
+
+    with (
+        patch(
+            "git_auto_sync.cli.load_config",
+            return_value=Config(mode=SyncMode.FETCH_ONLY),
+        ),
+        patch("git_auto_sync.lockfile.LOCK_DIR", lock_dir),
+        patch("git_auto_sync.lockfile.LOCK_FILE", lock_file),
+        patch("git_auto_sync.cli.sync_repo") as mock_sync,
+    ):
+        mock_sync.return_value.repo = str(local_clone)
+        mock_sync.return_value.error = ""
+        mock_sync.return_value.branches = []
+        mock_sync.return_value.mode = SyncMode.FETCH_ONLY
+        runner = CliRunner()
+        result = runner.invoke(main, ["sync", str(local_clone)])
+
+    assert result.exit_code == 0
+    mock_sync.assert_called_once_with(local_clone, SyncMode.FETCH_ONLY)

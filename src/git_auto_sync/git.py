@@ -39,11 +39,72 @@ def is_git_repo(path: Path) -> bool:
 
 
 def fetch_all(repo: Path) -> bool:
-    result = run_git(repo, "fetch", "--all", "--quiet")
+    return _fetch_all(repo)
+
+
+def fetch_remote_tracking(repo: Path) -> bool:
+    remotes = run_git(repo, "remote")
+    if remotes.returncode != 0:
+        logger.warning(
+            "Failed to list remotes for %s: %s", repo, remotes.stderr.strip()
+        )
+        return False
+
+    for remote in remotes.stdout.splitlines():
+        skip_fetch = run_git(
+            repo, "config", "--bool", "--get", f"remote.{remote}.skipFetchAll"
+        )
+        if skip_fetch.returncode not in (0, 1):
+            logger.warning(
+                "Failed to inspect skipFetchAll for %s/%s: %s",
+                repo,
+                remote,
+                skip_fetch.stderr.strip(),
+            )
+            return False
+        if skip_fetch.stdout.strip() == "true":
+            continue
+
+        refspecs = run_git(repo, "config", "--get-all", f"remote.{remote}.fetch")
+        if refspecs.returncode not in (0, 1):
+            logger.warning(
+                "Failed to inspect fetch refspecs for %s/%s: %s",
+                repo,
+                remote,
+                refspecs.stderr.strip(),
+            )
+            return False
+        unsafe_refspecs = [
+            refspec
+            for refspec in refspecs.stdout.splitlines()
+            if not _is_remote_tracking_refspec(refspec)
+        ]
+        if unsafe_refspecs:
+            logger.warning(
+                "Fetch-only rejected non-remote-tracking refspecs for %s/%s: %s",
+                repo,
+                remote,
+                ", ".join(unsafe_refspecs),
+            )
+            return False
+
+    return _fetch_all(repo, "--no-tags", "--no-prune-tags")
+
+
+def _fetch_all(repo: Path, *extra_args: str) -> bool:
+    result = run_git(repo, "fetch", "--all", "--prune", "--quiet", *extra_args)
     if result.returncode != 0:
         logger.warning("Fetch failed for %s: %s", repo, result.stderr.strip())
         return False
     return True
+
+
+def _is_remote_tracking_refspec(refspec: str) -> bool:
+    normalized = refspec.removeprefix("+")
+    if normalized.startswith("^") or ":" not in normalized:
+        return True
+    destination = normalized.split(":", 1)[1]
+    return not destination or destination.startswith("refs/remotes/")
 
 
 def is_worktree_clean(repo: Path) -> bool:
@@ -58,6 +119,25 @@ def get_current_branch(repo: Path) -> str | None:
     if result.returncode != 0:
         return None
     return result.stdout.strip()
+
+
+def get_checked_out_branches(repo: Path) -> dict[str, str] | None:
+    result = run_git(repo, "worktree", "list", "--porcelain", "-z")
+    if result.returncode != 0:
+        logger.warning(
+            "Failed to inspect worktrees for %s: %s", repo, result.stderr.strip()
+        )
+        return None
+
+    branches = {}
+    worktree_path: str | None = None
+    branch_prefix = "branch refs/heads/"
+    for field in result.stdout.split("\0"):
+        if field.startswith("worktree "):
+            worktree_path = field.removeprefix("worktree ")
+        elif field.startswith(branch_prefix) and worktree_path is not None:
+            branches[field.removeprefix(branch_prefix)] = worktree_path
+    return branches
 
 
 def get_local_branches(repo: Path) -> list[BranchInfo]:
@@ -105,11 +185,14 @@ def merge_ff_only(repo: Path, upstream: str) -> bool:
     return True
 
 
-def update_ref(repo: Path, ref: str, new_sha: str) -> bool:
-    result = run_git(repo, "update-ref", f"refs/heads/{ref}", new_sha)
+def force_branch(repo: Path, branch: str, new_sha: str) -> bool:
+    result = run_git(repo, "branch", "--force", branch, new_sha)
     if result.returncode != 0:
         logger.warning(
-            "update-ref failed for %s/%s: %s", repo, ref, result.stderr.strip()
+            "Branch update failed for %s/%s: %s",
+            repo,
+            branch,
+            result.stderr.strip(),
         )
         return False
     return True
