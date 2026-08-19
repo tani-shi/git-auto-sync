@@ -5,7 +5,7 @@ from pathlib import Path
 import click
 
 from git_auto_sync import __version__
-from git_auto_sync.config import load_config, save_config
+from git_auto_sync.config import ConfigError, SyncMode, load_config, save_config
 from git_auto_sync.git import get_current_branch, is_git_repo, is_worktree_clean
 from git_auto_sync.lockfile import SyncAlreadyRunningError, acquire_lock
 from git_auto_sync.log import LOG_FILE, setup_logging
@@ -20,7 +20,10 @@ from git_auto_sync.sync import SyncResult, sync_all, sync_repo
 @click.version_option(version=__version__)
 def main() -> None:
     """Keep local git repositories up-to-date automatically."""
-    config = load_config()
+    try:
+        config = load_config()
+    except ConfigError as error:
+        raise click.ClickException(str(error)) from error
     setup_logging(config.log_level)
 
 
@@ -70,6 +73,7 @@ def remove(path: str) -> None:
 def list_repos() -> None:
     """Show registered repositories."""
     config = load_config()
+    click.echo(f"Mode: {config.mode.value}")
     if not config.repos:
         click.echo(
             "No repositories registered. Use 'git-auto-sync add <path>' to add one."
@@ -97,20 +101,39 @@ def sync(path: str | None) -> None:
     """Run sync now (all repos or a specific one)."""
     try:
         with acquire_lock():
+            config = load_config()
             if path:
-                result = sync_repo(Path(path))
+                result = sync_repo(Path(path), config.mode)
                 _print_sync_result(result)
             else:
-                config = load_config()
                 if not config.repos:
                     click.echo("No repositories registered.")
                     return
-                results = sync_all(config.repos)
+                results = sync_all(config.repos, config.mode)
                 for r in results:
                     _print_sync_result(r)
     except SyncAlreadyRunningError:
         click.echo("Error: Another sync is already running", err=True)
         raise SystemExit(1)
+
+
+@main.command()
+@click.argument(
+    "value",
+    required=False,
+    type=click.Choice([mode.value for mode in SyncMode]),
+)
+def mode(value: str | None) -> None:
+    """Get or set the sync mode."""
+    config = load_config()
+
+    if value is None:
+        click.echo(config.mode.value)
+        return
+
+    config.mode = SyncMode(value)
+    save_config(config)
+    click.echo(f"Mode set to {value}.")
 
 
 @main.command()
@@ -178,7 +201,7 @@ def install() -> None:
     config = load_config()
     scheduler_install(interval_minutes=config.interval_minutes)
     click.echo("Background scheduler installed.")
-    click.echo(f"Sync will run every {config.interval_minutes} minutes.")
+    click.echo(f"{config.mode.value} will run every {config.interval_minutes} minutes.")
 
 
 @main.command()
@@ -195,6 +218,10 @@ def uninstall() -> None:
 def _print_sync_result(result: SyncResult) -> None:
     if result.error and not result.branches:
         click.echo(f"  {result.repo}: {result.error}")
+        return
+
+    if result.mode == SyncMode.FETCH_ONLY:
+        click.echo(f"  {result.repo}: fetched (fetch-only)")
         return
 
     click.echo(f"  {result.repo}:")

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from git_auto_sync.git import (
     fetch_all,
+    force_branch,
+    get_checked_out_branches,
     get_current_branch,
     get_local_branches,
     is_git_repo,
@@ -35,3 +38,32 @@ def test_is_worktree_clean(local_clone: Path):
 
 def test_fetch_all(local_clone: Path):
     assert fetch_all(local_clone)
+
+
+def test_get_checked_out_branches(local_clone: Path, tmp_path: Path):
+    worktree = tmp_path / "feature-worktree"
+    subprocess.run(
+        ["git", "worktree", "add", "-b", "feature", str(worktree)],
+        cwd=local_clone,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    branches = get_checked_out_branches(local_clone)
+
+    assert branches is not None
+    assert branches["main"] == str(local_clone)
+    assert branches["feature"] == str(worktree)
+
+
+def test_force_branch_refuses_checked_out_branch(local_clone: Path, tmp_path: Path):
+    worktree = tmp_path / "feature-worktree"
+    subprocess.run(
+        ["git", "worktree", "add", "-b", "feature", str(worktree)],
+        cwd=local_clone,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert not force_branch(local_clone, "feature", "main")
